@@ -21,21 +21,25 @@ jobs:
         with:
           flutter-version: '3.27.0'
 
-      - name: Auto-Construct & Inject Permissions
+      - name: Total Clean & Repair
         run: |
-          # Buat struktur Android baru
+          # 1. Hapus total folder android agar tidak ada sisa v1 embedding
+          rm -rf android
+          
+          # 2. Buat ulang struktur android yang bersih
           flutter create . --platforms android --org com.dhans62.qspro
           
-          # Path Manifest
+          # 3. Suntik izin Bluetooth & V2 Embedding ke AndroidManifest
           MANIFEST="android/app/src/main/AndroidManifest.xml"
-          
-          # Hapus manifest bawaan dan ganti dengan yang support Bluetooth Android 15
           cat <<EOF > $MANIFEST
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
               <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />
               <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
               <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+              
               <application android:label="QS PRO TUNER" android:icon="@mipmap/ic_launcher">
+                  <meta-data android:name="flutterEmbedding" android:value="2" />
+                  
                   <activity android:name=".MainActivity" android:exported="true"
                             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
                             android:hardwareAccelerated="true" android:windowSoftInputMode="adjustResize">
@@ -48,7 +52,7 @@ jobs:
           </manifest>
           EOF
 
-          # Set SDK Version untuk Android 15
+          # 4. Update Gradle ke versi Android 15
           sed -i 's/compileSdkVersion .*/compileSdkVersion 35/' android/app/build.gradle
           sed -i 's/minSdkVersion .*/minSdkVersion 24/' android/app/build.gradle
           sed -i 's/targetSdkVersion .*/targetSdkVersion 35/' android/app/build.gradle
