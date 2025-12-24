@@ -1,5 +1,5 @@
-name: qspro_tuner
-description: Advanced Racing ECU Tuner for ESP32
+name: ds_projek
+description: DS PROJEK Automotive - Racing ECU Tuner
 version: 1.0.0+1
 publish_to: 'none'
 
@@ -13,10 +13,7 @@ dependencies:
   google_fonts: ^6.1.0
   cupertino_icons: ^1.0.6
 
-dev_dependencies:
-  flutter_test:
-    sdk: flutter
-
 flutter:
   uses-material-design: true
-  
+  assets:
+    - assets/logo.png  # Wajib didaftarkan di sini
