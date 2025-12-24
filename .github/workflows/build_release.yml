@@ -23,13 +23,13 @@ jobs:
 
       - name: Auto-Construct DS PROJEK Identity
         run: |
-          # 1. Hapus sisa-sisa build lama
+          # 1. Bersihkan folder android lama secara total
           rm -rf android
           
-          # 2. Buat struktur Android dengan Nama & Package Baru
+          # 2. Re-create project dengan nama brand baru
           flutter create . --platforms android --org com.dsprojek --project-name ds_projek
           
-          # 3. Suntik Izin Bluetooth & Nama Aplikasi "DS PROJEK"
+          # 3. Inject Android Manifest yang mendukung BLE & V2 Embedding
           MANIFEST="android/app/src/main/AndroidManifest.xml"
           cat <<EOF > $MANIFEST
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
@@ -51,20 +51,16 @@ jobs:
           </manifest>
           EOF
 
-          # 4. Timpa Ikon Standar dengan Logo DS PROJEK
-          # Kita timpa ke semua resolusi agar logo tidak pecah
-          mkdir -p android/app/src/main/res/mipmap-hdpi
-          mkdir -p android/app/src/main/res/mipmap-mdpi
-          mkdir -p android/app/src/main/res/mipmap-xhdpi
-          mkdir -p android/app/src/main/res/mipmap-xxhdpi
-          mkdir -p android/app/src/main/res/mipmap-xxxhdpi
-          cp assets/logo.png android/app/src/main/res/mipmap-hdpi/ic_launcher.png
-          cp assets/logo.png android/app/src/main/res/mipmap-mdpi/ic_launcher.png
-          cp assets/logo.png android/app/src/main/res/mipmap-xhdpi/ic_launcher.png
-          cp assets/logo.png android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png
-          cp assets/logo.png android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+          # 4. Solusi Error AAPT2: Bersihkan semua icon default dan ganti dengan logo.png
+          # Kita pastikan folder tujuan bersih sebelum dicopy
+          find android/app/src/main/res/ -name "ic_launcher.png" -delete
+          
+          for dir in mipmap-hdpi mipmap-mdpi mipmap-xhdpi mipmap-xxhdpi mipmap-xxxhdpi; do
+            mkdir -p android/app/src/main/res/$dir
+            cp assets/logo.png android/app/src/main/res/$dir/ic_launcher.png
+          done
 
-          # 5. Set SDK untuk Android 15
+          # 5. Konfigurasi Gradle untuk Android 15 (Target SDK 35)
           sed -i 's/compileSdkVersion .*/compileSdkVersion 35/' android/app/build.gradle
           sed -i 's/minSdkVersion .*/minSdkVersion 24/' android/app/build.gradle
           sed -i 's/targetSdkVersion .*/targetSdkVersion 35/' android/app/build.gradle
@@ -84,7 +80,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.${{ github.run_number }}
-          name: "DS PROJEK Release [${{ steps.date.outputs.now }}]"
+          name: "DS PROJEK v1.${{ github.run_number }} [${{ steps.date.outputs.now }}]"
           files: build/app/outputs/flutter-apk/app-release.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
