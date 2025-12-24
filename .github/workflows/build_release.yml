@@ -1,4 +1,4 @@
-name: Production Build A-Z
+name: Production Build DS PROJEK
 
 on:
   push:
@@ -21,15 +21,15 @@ jobs:
         with:
           flutter-version: '3.27.0'
 
-      - name: Total Clean & Repair
+      - name: Auto-Construct DS PROJEK Identity
         run: |
-          # 1. Hapus total folder android agar tidak ada sisa v1 embedding
+          # 1. Hapus sisa-sisa build lama
           rm -rf android
           
-          # 2. Buat ulang struktur android yang bersih
-          flutter create . --platforms android --org com.dhans62.qspro
+          # 2. Buat struktur Android dengan Nama & Package Baru
+          flutter create . --platforms android --org com.dsprojek --project-name ds_projek
           
-          # 3. Suntik izin Bluetooth & V2 Embedding ke AndroidManifest
+          # 3. Suntik Izin Bluetooth & Nama Aplikasi "DS PROJEK"
           MANIFEST="android/app/src/main/AndroidManifest.xml"
           cat <<EOF > $MANIFEST
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
@@ -37,9 +37,8 @@ jobs:
               <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
               <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
               
-              <application android:label="QS PRO TUNER" android:icon="@mipmap/ic_launcher">
+              <application android:label="DS PROJEK" android:icon="@mipmap/ic_launcher">
                   <meta-data android:name="flutterEmbedding" android:value="2" />
-                  
                   <activity android:name=".MainActivity" android:exported="true"
                             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
                             android:hardwareAccelerated="true" android:windowSoftInputMode="adjustResize">
@@ -52,7 +51,20 @@ jobs:
           </manifest>
           EOF
 
-          # 4. Update Gradle ke versi Android 15
+          # 4. Timpa Ikon Standar dengan Logo DS PROJEK
+          # Kita timpa ke semua resolusi agar logo tidak pecah
+          mkdir -p android/app/src/main/res/mipmap-hdpi
+          mkdir -p android/app/src/main/res/mipmap-mdpi
+          mkdir -p android/app/src/main/res/mipmap-xhdpi
+          mkdir -p android/app/src/main/res/mipmap-xxhdpi
+          mkdir -p android/app/src/main/res/mipmap-xxxhdpi
+          cp assets/logo.png android/app/src/main/res/mipmap-hdpi/ic_launcher.png
+          cp assets/logo.png android/app/src/main/res/mipmap-mdpi/ic_launcher.png
+          cp assets/logo.png android/app/src/main/res/mipmap-xhdpi/ic_launcher.png
+          cp assets/logo.png android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png
+          cp assets/logo.png android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+
+          # 5. Set SDK untuk Android 15
           sed -i 's/compileSdkVersion .*/compileSdkVersion 35/' android/app/build.gradle
           sed -i 's/minSdkVersion .*/minSdkVersion 24/' android/app/build.gradle
           sed -i 's/targetSdkVersion .*/targetSdkVersion 35/' android/app/build.gradle
@@ -64,11 +76,15 @@ jobs:
           flutter pub get
           flutter build apk --release
 
+      - name: Get Current Date
+        id: date
+        run: echo "now=$(TZ='Asia/Jakarta' date +'%Y-%m-%d %H:%M')" >> $GITHUB_OUTPUT
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: build-${{ github.run_number }}
-          name: "QS PRO APK v${{ github.run_number }}"
+          tag_name: v1.${{ github.run_number }}
+          name: "DS PROJEK Release [${{ steps.date.outputs.now }}]"
           files: build/app/outputs/flutter-apk/app-release.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
