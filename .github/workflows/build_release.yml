@@ -23,20 +23,21 @@ jobs:
 
       - name: Auto-Construct DS PROJEK Identity
         run: |
-          # 1. Bersihkan folder android lama secara total
+          # 1. Bersihkan sisa build lama
           rm -rf android
-          
-          # 2. Re-create project dengan nama brand baru
           flutter create . --platforms android --org com.dsprojek --project-name ds_projek
           
-          # 3. Inject Android Manifest yang mendukung BLE & V2 Embedding
+          # 2. Verifikasi Tipe File (Cek di log jika build gagal)
+          echo "Verifikasi format logo:"
+          file assets/logo.png
+          
+          # 3. Suntik Android Manifest (Izin BLE & Nama Aplikasi)
           MANIFEST="android/app/src/main/AndroidManifest.xml"
           cat <<EOF > $MANIFEST
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
               <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />
               <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
               <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-              
               <application android:label="DS PROJEK" android:icon="@mipmap/ic_launcher">
                   <meta-data android:name="flutterEmbedding" android:value="2" />
                   <activity android:name=".MainActivity" android:exported="true"
@@ -51,20 +52,17 @@ jobs:
           </manifest>
           EOF
 
-          # 4. Solusi Error AAPT2: Bersihkan semua icon default dan ganti dengan logo.png
-          # Kita pastikan folder tujuan bersih sebelum dicopy
+          # 4. Suntik Icon PNG Asli ke Resource Android
           find android/app/src/main/res/ -name "ic_launcher.png" -delete
-          
           for dir in mipmap-hdpi mipmap-mdpi mipmap-xhdpi mipmap-xxhdpi mipmap-xxxhdpi; do
             mkdir -p android/app/src/main/res/$dir
             cp assets/logo.png android/app/src/main/res/$dir/ic_launcher.png
           done
 
-          # 5. Konfigurasi Gradle untuk Android 15 (Target SDK 35)
+          # 5. Set SDK Version untuk Android 15
           sed -i 's/compileSdkVersion .*/compileSdkVersion 35/' android/app/build.gradle
           sed -i 's/minSdkVersion .*/minSdkVersion 24/' android/app/build.gradle
           sed -i 's/targetSdkVersion .*/targetSdkVersion 35/' android/app/build.gradle
-          
           echo "flutter.sdk=$FLUTTER_ROOT" > android/local.properties
 
       - name: Build APK
