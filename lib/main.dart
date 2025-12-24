@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -12,9 +13,8 @@ class DsProjekApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       theme: ThemeData.dark().copyWith(
-        scaffoldBackgroundColor: const Color(0xFF121212), // Hitam Soft sesuai permintaan
+        scaffoldBackgroundColor: const Color(0xFF121212),
         primaryColor: Colors.cyanAccent,
-        colorScheme: const ColorScheme.dark(primary: Colors.cyanAccent),
       ),
       home: const MainMenu(),
     );
@@ -28,19 +28,23 @@ class MainMenu extends StatefulWidget {
 }
 
 class _MainMenuState extends State<MainMenu> {
-  int _selectedIndex = 1; // Default di Home
-  BluetoothDevice? connectedDevice;
-  bool isConnected = false;
+  int _selectedIndex = 1;
+  BluetoothDevice? _connectedDevice;
+  bool _isConnected = false;
+  StreamSubscription<BluetoothConnectionState>? _connectionSubscription;
 
-  // Struktur Fitur sesuai coretan gambar
-  final List<Map<String, dynamic>> features = [
-    {'title': 'QUICKSHIFTER', 'icon': Icons.bolt_rounded, 'active': true},
-    {'title': 'LIVE DATA', 'icon': Icons.analytics_outlined, 'active': false},
-    {'title': 'TIMING KUDA', 'icon': Icons.timer_outlined, 'active': false},
-    {'title': 'LAUNCH CONTROL', 'icon': Icons.rocket_launch_rounded, 'active': false},
-    {'title': 'LIMITER', 'icon': Icons.speed_rounded, 'active': false},
-    {'title': 'DIAGNOSTIC', 'icon': Icons.build_circle_outlined, 'active': false},
-  ];
+  // UUID dari Kode ESP32 kamu
+  final String serviceUuid = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
+
+  void _onDeviceConnected(BluetoothDevice device) {
+    _connectionSubscription?.cancel();
+    _connectionSubscription = device.connectionState.listen((state) {
+      setState(() {
+        _connectedDevice = device;
+        _isConnected = state == BluetoothConnectionState.connected;
+      });
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -48,316 +52,246 @@ class _MainMenuState extends State<MainMenu> {
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        title: Text("DS PROJEK", 
-          style: GoogleFonts.orbitron(letterSpacing: 2, fontWeight: FontWeight.bold, color: Colors.cyanAccent)),
+        title: Text("DS PROJEK", style: GoogleFonts.orbitron(letterSpacing: 2, fontWeight: FontWeight.bold)),
         actions: [
-          // Status Koneksi BLE di Pojok Kanan Atas
-          Container(
-            margin: const EdgeInsets.only(right: 15),
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: isConnected ? Colors.cyanAccent.withOpacity(0.1) : Colors.redAccent.withOpacity(0.1),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              isConnected ? Icons.bluetooth_connected : Icons.bluetooth_disabled,
-              color: isConnected ? Colors.cyanAccent : Colors.redAccent,
-              size: 20,
-            ),
+          Padding(
+            padding: const EdgeInsets.all(15),
+            child: Icon(_isConnected ? Icons.bluetooth_connected : Icons.bluetooth_disabled,
+                color: _isConnected ? Colors.cyanAccent : Colors.redAccent),
           ),
         ],
       ),
-      body: IndexedStack(
-        index: _selectedIndex,
-        children: [
-          _buildBlePage(),      // Index 0: BLE Connection
-          _buildDashboard(),    // Index 1: Home
-          _buildSettingsPage(), // Index 2: Settings
-        ],
-      ),
+      body: _buildBody(),
       bottomNavigationBar: _buildBottomNav(),
     );
   }
 
-  // HALAMAN UTAMA (DASHBOARD 2 KOLOM)
+  Widget _buildBody() {
+    if (_selectedIndex == 0) return _buildBlePage();
+    if (_selectedIndex == 1) return _buildDashboard();
+    return _buildSettingsPage();
+  }
+
   Widget _buildDashboard() {
-    return SingleChildScrollView(
-      physics: const BouncingScrollPhysics(),
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text("TUNING MENU", 
-            style: GoogleFonts.inter(color: Colors.grey, fontWeight: FontWeight.bold, letterSpacing: 1.5)),
-          const SizedBox(height: 20),
-          GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2, 
-              crossAxisSpacing: 15, 
-              mainAxisSpacing: 15, 
-              childAspectRatio: 1.0,
-            ),
-            itemCount: features.length,
-            itemBuilder: (context, index) {
-              return _buildMenuCard(features[index]);
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMenuCard(Map<String, dynamic> data) {
-    bool active = data['active'];
-    return GestureDetector(
-      onTap: () {
-        if (active) {
-          Navigator.push(context, MaterialPageRoute(
-            builder: (context) => QsDetailScreen(device: connectedDevice)));
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text("${data['title']} is Coming Soon!", 
-            style: const TextStyle(color: Colors.white)), backgroundColor: Colors.black87));
-        }
-      },
-      child: Container(
-        decoration: BoxDecoration(
-          color: const Color(0xFF1E1E1E), // Grey Soft
-          borderRadius: BorderRadius.circular(25),
-          border: Border.all(color: active ? Colors.cyanAccent.withOpacity(0.2) : Colors.white10),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(data['icon'], size: 45, color: active ? Colors.cyanAccent : Colors.grey.withOpacity(0.3)),
-            const SizedBox(height: 12),
-            Text(data['title'], 
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, 
-              color: active ? Colors.white : Colors.grey)),
-            if (!active) 
-              Container(
-                margin: const EdgeInsets.only(top: 5),
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: BoxDecoration(color: Colors.orange.withOpacity(0.1), borderRadius: BorderRadius.circular(5)),
-                child: const Text("SOON", style: TextStyle(fontSize: 8, color: Colors.orange)),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // HALAMAN BLE (MANUAL SCAN)
-  Widget _buildBlePage() {
     return Column(
       children: [
-        const SizedBox(height: 20),
-        ElevatedButton.icon(
-          icon: const Icon(Icons.search),
-          label: const Text("SCAN FOR ECU"),
-          onPressed: () => FlutterBluePlus.startScan(timeout: const Duration(seconds: 5)),
-          style: ElevatedButton.styleFrom(backgroundColor: Colors.cyanAccent, foregroundColor: Colors.black),
+        // Indikator Status Koneksi
+        Container(
+          width: double.infinity,
+          margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: _isConnected ? Colors.cyanAccent.withOpacity(0.1) : Colors.white10,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Text(
+            _isConnected 
+              ? "Terhubung ke: ${_connectedDevice?.platformName ?? _connectedDevice?.remoteId}"
+              : "Status: Disconnected",
+            textAlign: TextAlign.center,
+            style: TextStyle(color: _isConnected ? Colors.cyanAccent : Colors.grey, fontSize: 12),
+          ),
         ),
         Expanded(
-          child: StreamBuilder<List<ScanResult>>(
-            stream: FlutterBluePlus.scanResults,
-            builder: (c, snapshot) {
-              final results = snapshot.data ?? [];
-              return ListView.builder(
-                itemCount: results.length,
-                itemBuilder: (context, i) {
-                  final dev = results[i].device;
-                  return ListTile(
-                    title: Text(dev.platformName.isEmpty ? "Unknown Device" : dev.platformName),
-                    subtitle: Text(dev.remoteId.toString()),
-                    trailing: TextButton(
-                      child: const Text("CONNECT"),
-                      onPressed: () async {
-                        await dev.connect();
-                        setState(() { connectedDevice = dev; isConnected = true; _selectedIndex = 1; });
-                      },
-                    ),
-                  );
-                },
-              );
-            },
+          child: GridView.count(
+            crossAxisCount: 2,
+            padding: const EdgeInsets.all(20),
+            mainAxisSpacing: 15,
+            crossAxisSpacing: 15,
+            children: [
+              _menuItem("QUICKSHIFTER", Icons.bolt, true),
+              _menuItem("LIVE DATA", Icons.analytics, false),
+              _menuItem("TIMING KUDA", Icons.timer, false),
+              _menuItem("LIMITER", Icons.speed, false),
+            ],
           ),
         ),
       ],
     );
   }
 
-  Widget _buildSettingsPage() => const Center(child: Text("App Settings Coming Soon"));
-
-  // BOTTOM NAVIGATION (STYLE CUSTOM)
-  Widget _buildBottomNav() {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(20, 0, 20, 25),
-      height: 70,
-      decoration: BoxDecoration(
-        color: const Color(0xFF1E1E1E),
-        borderRadius: BorderRadius.circular(35),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.5), blurRadius: 20)],
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          _navItem(Icons.bluetooth, 0, "BLE"),
-          _navItem(Icons.grid_view_rounded, 1, "HOME"),
-          _navItem(Icons.settings, 2, "SETTING"),
-        ],
+  Widget _menuItem(String title, IconData icon, bool active) {
+    return GestureDetector(
+      onTap: () {
+        if (active) {
+          Navigator.push(context, MaterialPageRoute(builder: (context) => QsDetailScreen(device: _connectedDevice)));
+        }
+      },
+      child: Container(
+        decoration: BoxDecoration(
+          color: const Color(0xFF1E1E1E),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: active ? Colors.cyanAccent.withOpacity(0.3) : Colors.transparent),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 40, color: active ? Colors.cyanAccent : Colors.grey),
+            const SizedBox(height: 10),
+            Text(title, style: TextStyle(fontSize: 12, color: active ? Colors.white : Colors.grey)),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _navItem(IconData icon, int index, String label) {
-    bool isSel = _selectedIndex == index;
-    return GestureDetector(
-      onTap: () => setState(() => _selectedIndex = index),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, color: isSel ? Colors.cyanAccent : Colors.grey, size: 26),
-          Text(label, style: TextStyle(color: isSel ? Colors.cyanAccent : Colors.grey, fontSize: 10)),
-        ],
-      ),
+  Widget _buildBlePage() {
+    return Column(
+      children: [
+        const SizedBox(height: 20),
+        ElevatedButton(
+          onPressed: () => FlutterBluePlus.startScan(timeout: const Duration(seconds: 4)),
+          child: const Text("Manual Scan"),
+        ),
+        Expanded(
+          child: StreamBuilder<List<ScanResult>>(
+            stream: FlutterBluePlus.scanResults,
+            builder: (c, snapshot) => ListView(
+              children: (snapshot.data ?? []).map((r) => ListTile(
+                title: Text(r.device.platformName.isEmpty ? "Unknown ECU" : r.device.platformName),
+                subtitle: Text(r.device.remoteId.toString()),
+                onTap: () async {
+                  await r.device.connect();
+                  _onDeviceConnected(r.device);
+                  setState(() => _selectedIndex = 1);
+                },
+              )).toList(),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSettingsPage() {
+    return ListView(
+      padding: const EdgeInsets.all(20),
+      children: [
+        const Text("FIRMWARE UPDATE (OTA)", style: TextStyle(fontWeight: FontWeight.bold)),
+        const SizedBox(height: 10),
+        ListTile(
+          tileColor: const Color(0xFF1E1E1E),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          leading: const Icon(Icons.system_update, color: Colors.orangeAccent),
+          title: const Text("Check Update"),
+          subtitle: const Text("Current Version: v5.0"),
+          onTap: () {
+            // Logika OTA akan diimplementasikan di sini
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("OTA Feature Coming Soon")));
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildBottomNav() {
+    return BottomNavigationBar(
+      currentIndex: _selectedIndex,
+      onTap: (i) => setState(() => _selectedIndex = i),
+      backgroundColor: const Color(0xFF1E1E1E),
+      selectedItemColor: Colors.cyanAccent,
+      items: const [
+        BottomNavigationBarItem(icon: Icon(Icons.bluetooth), label: "BLE"),
+        BottomNavigationBarItem(icon: Icon(Icons.home), label: "Home"),
+        BottomNavigationBarItem(icon: Icon(Icons.settings), label: "Setting"),
+      ],
     );
   }
 }
 
-// ==========================================
-// HALAMAN DETAIL QUICKSHIFTER
-// ==========================================
+// --- HALAMAN DETAIL QUICKSHIFTER ---
 class QsDetailScreen extends StatefulWidget {
   final BluetoothDevice? device;
   const QsDetailScreen({super.key, this.device});
-
   @override
   State<QsDetailScreen> createState() => _QsDetailScreenState();
 }
 
 class _QsDetailScreenState extends State<QsDetailScreen> {
-  double cutOffValue = 75;
-  String mode = "Standard";
+  double cutTime = 75;
+  double valTime = 5;
   bool isOn = true;
+  String mode = "Standard";
 
-  // FUNGSI SINKRONISASI DATA KE ESP32 (SESUAI LOGIKA PARSING KAMU)
-  void sendConfigToEcu() async {
-    if (widget.device == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("ECU Not Connected!")));
-      return;
-    }
+  final String charUuid = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
 
+  void sendToEcu() async {
+    if (widget.device == null) return;
     try {
       List<BluetoothService> services = await widget.device!.discoverServices();
-      for (var service in services) {
-        // UUID Service ESP32 kamu
-        if (service.uuid.toString() == "4fafc201-1fb5-459e-8fcc-c5c9c331914b") {
-          for (var char in service.characteristics) {
-            // UUID Characteristic ESP32 kamu
-            if (char.uuid.toString() == "beb5483e-36e1-4688-b7f5-ea07361b26a8") {
-              
-              // 1. Kirim Status Power (QSE1 / QSE0)
-              await char.write(utf8.encode("QSE${isOn ? 1 : 0}"));
-              await Future.delayed(const Duration(milliseconds: 150));
-
-              // 2. Kirim Nilai Cut Time (QSC75 / QSC40)
-              await char.write(utf8.encode("QSC${cutOffValue.toInt()}"));
-
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text("Successfully Saved to ECU!"), backgroundColor: Colors.cyan),
-              );
-            }
+      for (var s in services) {
+        for (var c in s.characteristics) {
+          if (c.uuid.toString() == charUuid) {
+            // Mengirim 3 parameter dengan delay agar tidak tabrakan
+            await c.write(utf8.encode("QSE${isOn ? 1 : 0}"));
+            await Future.delayed(const Duration(milliseconds: 150));
+            await c.write(utf8.encode("QSC${cutTime.toInt()}"));
+            await Future.delayed(const Duration(milliseconds: 150));
+            await c.write(utf8.encode("QSV${valTime.toInt()}"));
+            
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Setting Tersimpan")));
           }
         }
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
+      print("Error: $e");
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("QS CONFIGURATION"), backgroundColor: Colors.transparent),
-      body: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 20),
-        child: Column(
+      appBar: AppBar(title: const Text("QS CONFIG")),
+      body: ListView(
+        padding: const EdgeInsets.all(25),
+        children: [
+          SwitchListTile(
+            title: const Text("Sistem Quickshifter"),
+            value: isOn,
+            activeColor: Colors.cyanAccent,
+            onChanged: (v) => setState(() => isOn = v),
+          ),
+          const Divider(),
+          const SizedBox(height: 20),
+          _sliderBlock("Cut-off Time (ms)", cutTime, 30, 150, (v) {
+            setState(() { mode = "Custom"; cutTime = v; });
+          }),
+          const SizedBox(height: 30),
+          _sliderBlock("Sensor Delay / Validation (ms)", valTime, 0, 50, (v) {
+            setState(() { valTime = v; });
+          }),
+          const SizedBox(height: 40),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.cyanAccent,
+              minimumSize: const Size(double.infinity, 55),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))
+            ),
+            onPressed: sendToEcu,
+            child: const Text("SIMPAN KE ECU", style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _sliderBlock(String title, double val, double min, double max, Function(double) onChanged) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            // ON OFF SWITCH
-            Container(
-              padding: const EdgeInsets.all(15),
-              decoration: BoxDecoration(color: Colors.white.withOpacity(0.05), borderRadius: BorderRadius.circular(20)),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text("Quickshifter System", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                  Switch(
-                    value: isOn, 
-                    activeColor: Colors.cyanAccent, 
-                    onChanged: (v) => setState(() => isOn = v)
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 30),
-
-            // MODE SELECTOR
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: ['Racing', 'Standard', 'Custom'].map((m) {
-                bool isSelected = mode == m;
-                return ChoiceChip(
-                  label: Text(m),
-                  selected: isSelected,
-                  onSelected: (s) => setState(() {
-                    mode = m;
-                    if (m == 'Racing') cutOffValue = 40;
-                    if (m == 'Standard') cutOffValue = 75;
-                  }),
-                );
-              }).toList(),
-            ),
-
-            const SizedBox(height: 60),
-
-            // DISPLAY ANGKA BULAT
-            Text("${cutOffValue.toInt()}", 
-              style: GoogleFonts.orbitron(fontSize: 90, fontWeight: FontWeight.bold, color: Colors.cyanAccent)),
-            const Text("MILLISECONDS", style: TextStyle(letterSpacing: 4, color: Colors.grey)),
-
-            const SizedBox(height: 40),
-
-            // SLIDER (HANYA AKTIF JIKA CUSTOM)
-            Slider(
-              value: cutOffValue,
-              min: 30, max: 150,
-              divisions: 120,
-              activeColor: Colors.cyanAccent,
-              onChanged: mode == 'Custom' ? (v) => setState(() => cutOffValue = v) : null,
-            ),
-            Text(mode == 'Custom' ? "Slide to adjust value" : "Mode $mode is locked", 
-              style: const TextStyle(fontSize: 10, color: Colors.grey)),
-
-            const Spacer(),
-
-            // TOMBOL SAVE
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.cyanAccent,
-                minimumSize: const Size(double.infinity, 60),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-              ),
-              onPressed: sendConfigToEcu,
-              child: const Text("SAVE TO ECU", 
-                style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 18)),
-            ),
-            const SizedBox(height: 20),
+            Text(title, style: const TextStyle(color: Colors.grey)),
+            Text("${val.toInt()} ms", style: const TextStyle(color: Colors.cyanAccent, fontWeight: FontWeight.bold, fontSize: 18)),
           ],
         ),
-      ),
+        Slider(
+          value: val, min: min, max: max,
+          activeColor: Colors.cyanAccent,
+          onChanged: onChanged,
+        ),
+      ],
     );
   }
 }
