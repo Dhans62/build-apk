@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:async';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -69,7 +70,6 @@ class _MainMenuState extends State<MainMenu> {
   Widget _buildDashboard() {
     return Column(
       children: [
-        // Status Bar
         Container(
           margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
           padding: const EdgeInsets.symmetric(vertical: 15, horizontal: 20),
@@ -90,7 +90,6 @@ class _MainMenuState extends State<MainMenu> {
             ],
           ),
         ),
-        
         Expanded(
           child: GridView.count(
             crossAxisCount: 2,
@@ -222,7 +221,6 @@ class _MainMenuState extends State<MainMenu> {
   }
 }
 
-// --- SCREEN QUICKSHIFTER DENGAN SYNC DATA ---
 class QsDetailScreen extends StatefulWidget {
   final BluetoothDevice? device;
   const QsDetailScreen({super.key, this.device});
@@ -248,28 +246,27 @@ class _QsDetailScreenState extends State<QsDetailScreen> {
 
   void _initBleSync() async {
     if (widget.device == null) return;
-    
-    List<BluetoothService> services = await widget.device!.discoverServices();
-    for (var s in services) {
-      if (s.uuid.toString() == serviceUuid) {
-        for (var c in s.characteristics) {
-          if (c.uuid.toString() == charUuid) {
-            _targetChar = c;
-            // Aktifkan Notify agar Flutter tahu saat ESP32 kirim balik data
-            await c.setNotifyValue(true);
-            _notifySub = c.onValueReceived.listen((value) {
-              _parseEcuData(utf8.decode(value));
-            });
-            // Minta data ke ECU saat pertama buka
-            await c.write(utf8.encode("GET_QS")); 
+    try {
+      List<BluetoothService> services = await widget.device!.discoverServices();
+      for (var s in services) {
+        if (s.uuid.toString().toLowerCase() == serviceUuid) {
+          for (var c in s.characteristics) {
+            if (c.uuid.toString().toLowerCase() == charUuid) {
+              _targetChar = c;
+              await c.setNotifyValue(true);
+              _notifySub = c.onValueReceived.listen((value) {
+                _parseEcuData(utf8.decode(value));
+              });
+              await Future.delayed(const Duration(milliseconds: 500));
+              await c.write(utf8.encode("GET_QS")); 
+            }
           }
         }
       }
-    }
+    } catch(e) { print(e); }
   }
 
   void _parseEcuData(String data) {
-    // Format: ACK_QS|E:1|C:75|V:5
     if (data.startsWith("ACK_QS")) {
       List<String> parts = data.split('|');
       setState(() {
@@ -277,18 +274,15 @@ class _QsDetailScreenState extends State<QsDetailScreen> {
         _cutTime = double.parse(parts[2].split(':')[1]);
         _valTime = double.parse(parts[3].split(':')[1]);
       });
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Data ECU Disinkronkan"), duration: Duration(seconds: 1)));
     }
   }
 
   void _sendData() async {
     if (_targetChar == null) return;
     try {
-      await _targetChar!.write(utf8.encode("QSE${_isOn ? 1 : 0}"));
-      await Future.delayed(const Duration(milliseconds: 100));
-      await _targetChar!.write(utf8.encode("QSC${_cutTime.toInt()}"));
-      await Future.delayed(const Duration(milliseconds: 100));
-      await _targetChar!.write(utf8.encode("QSV${_valTime.toInt()}"));
+      // ATOMIC UPDATE: Mengirim satu string tunggal agar aman di Preferences ESP32
+      String payload = "QSSET|E:${_isOn ? 1 : 0}|C:${_cutTime.toInt()}|V:${_valTime.toInt()}";
+      await _targetChar!.write(utf8.encode(payload));
       
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(backgroundColor: Colors.cyanAccent, content: Text("SAVE SUCCESS", style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)))
@@ -307,71 +301,146 @@ class _QsDetailScreenState extends State<QsDetailScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text("QS CONFIG", style: GoogleFonts.orbitron(fontSize: 16))),
+      backgroundColor: const Color(0xFF0F0F0F),
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: IconButton(icon: const Icon(Icons.arrow_back_ios, size: 20), onPressed: () => Navigator.pop(context)),
+        title: Text("QUICKSHIFTER CONFIG", style: GoogleFonts.orbitron(fontSize: 14, fontWeight: FontWeight.bold, letterSpacing: 1)),
+        actions: [
+           IconButton(onPressed: () {}, icon: const Icon(Icons.bluetooth_connected, color: Colors.cyanAccent, size: 20)),
+        ],
+      ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(25),
+        padding: const EdgeInsets.symmetric(horizontal: 20),
         child: Column(
           children: [
-            // Card Power
-            _buildCard(
-              child: SwitchListTile(
-                title: Text("POWER STATUS", style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
-                value: _isOn,
-                activeColor: Colors.cyanAccent,
-                onChanged: (v) => setState(() => _isOn = v),
+            const SizedBox(height: 10),
+            // POWER STATUS CARD
+            Container(
+              padding: const EdgeInsets.all(15),
+              decoration: BoxDecoration(color: const Color(0xFF1A1A1A), borderRadius: BorderRadius.circular(15)),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text("POWER STATUS", style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 13)),
+                  Row(
+                    children: [
+                      Text(_isOn ? "ON" : "OFF", style: GoogleFonts.inter(color: _isOn ? Colors.cyanAccent : Colors.grey, fontWeight: FontWeight.bold, fontSize: 12)),
+                      const SizedBox(width: 10),
+                      Transform.scale(
+                        scale: 0.8,
+                        child: Switch(
+                          value: _isOn,
+                          activeColor: Colors.cyanAccent,
+                          onChanged: (v) => setState(() => _isOn = v),
+                        ),
+                      ),
+                    ],
+                  )
+                ],
               ),
             ),
             const SizedBox(height: 20),
-            // Card Cut Time
-            _buildCard(
-              child: _sliderBlock("IGNITION CUT (ms)", _cutTime, 30, 200, (v) => setState(() => _cutTime = v)),
+            // PRESET BUTTONS
+            Row(
+              children: [
+                _presetBtn("RACING", "40ms", _cutTime == 40, () => setState(() => _cutTime = 40)),
+                const SizedBox(width: 10),
+                _presetBtn("STANDARD", "75ms", _cutTime == 75, () => setState(() => _cutTime = 75)),
+                const SizedBox(width: 10),
+                _presetBtn("CUSTOM", "", _cutTime != 40 && _cutTime != 75, () {}),
+              ],
             ),
-            const SizedBox(height: 20),
-            // Card Val Time
-            _buildCard(
-              child: _sliderBlock("SENSOR DELAY (ms)", _valTime, 0, 50, (v) => setState(() => _valTime = v)),
+            const SizedBox(height: 30),
+            // GAUGE CUSTOM IMITATION
+            Stack(
+              alignment: Alignment.center,
+              children: [
+                SizedBox(
+                  width: 220, height: 220,
+                  child: CircularProgressIndicator(
+                    value: _cutTime / 200,
+                    strokeWidth: 8,
+                    backgroundColor: Colors.white10,
+                    valueColor: const AlwaysStoppedAnimation<Color>(Colors.cyanAccent),
+                  ),
+                ),
+                Column(
+                  children: [
+                    Text("${_cutTime.toInt()}", style: GoogleFonts.orbitron(fontSize: 48, fontWeight: FontWeight.bold, color: Colors.white)),
+                    Text("ms", style: GoogleFonts.inter(fontSize: 16, color: Colors.grey)),
+                  ],
+                ),
+                Positioned(
+                  bottom: 30,
+                  child: Text("CUSTOM", style: GoogleFonts.inter(fontSize: 10, color: Colors.grey, letterSpacing: 2)),
+                ),
+                // Slider invisible over gauge or below it
+              ],
             ),
-            const SizedBox(height: 50),
+            Slider(
+              value: _cutTime, min: 30, max: 200,
+              activeColor: Colors.cyanAccent,
+              onChanged: (v) => setState(() => _cutTime = v),
+            ),
+            const SizedBox(height: 30),
+            // IGNITION DELAY SLIDER
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(color: const Color(0xFF1A1A1A), borderRadius: BorderRadius.circular(15)),
+              child: Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text("IGNITION DELAY (ms)", style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white70)),
+                      Text("${_valTime.toInt()} ms", style: GoogleFonts.orbitron(fontSize: 12, color: Colors.white)),
+                    ],
+                  ),
+                  Slider(
+                    value: _valTime, min: 0, max: 50,
+                    activeColor: Colors.cyanAccent,
+                    onChanged: (v) => setState(() => _valTime = v),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 40),
+            // SAVE BUTTON
             ElevatedButton(
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.cyanAccent,
-                minimumSize: const Size(double.infinity, 60),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-                elevation: 10,
-                shadowColor: Colors.cyanAccent.withOpacity(0.3),
+                minimumSize: const Size(double.infinity, 55),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
               ),
               onPressed: _sendData,
-              child: const Text("SAVE", style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 18)),
+              child: Text("SAVE", style: GoogleFonts.inter(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 14)),
             ),
+            const SizedBox(height: 20),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildCard({required Widget child}) {
-    return Container(
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(color: const Color(0xFF1A1A1A), borderRadius: BorderRadius.circular(20)),
-      child: child,
-    );
-  }
-
-  Widget _sliderBlock(String title, double val, double min, double max, Function(double) onChanged) {
-    return Padding(
-      padding: const EdgeInsets.all(10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+  Widget _presetBtn(String label, String ms, bool active, VoidCallback onTap) {
+    return Expanded(
+      child: InkWell(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          decoration: BoxDecoration(
+            color: active ? Colors.cyanAccent : const Color(0xFF1A1A1A),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Column(
             children: [
-              Text(title, style: GoogleFonts.inter(color: Colors.grey, fontWeight: FontWeight.w600)),
-              Text("${val.toInt()} ms", style: GoogleFonts.orbitron(color: Colors.cyanAccent, fontWeight: FontWeight.bold)),
+              Text(label, style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold, color: active ? Colors.black : Colors.white)),
+              if (ms.isNotEmpty) Text(ms, style: GoogleFonts.inter(fontSize: 9, color: active ? Colors.black54 : Colors.grey)),
             ],
           ),
-          Slider(value: val, min: min, max: max, activeColor: Colors.cyanAccent, onChanged: onChanged),
-        ],
+        ),
       ),
     );
   }
