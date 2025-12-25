@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:fl_chart/fl_chart.dart'; // Tambahkan fl_chart di pubspec.yaml kamu
 
 void main() => runApp(const DsProjekApp());
 
@@ -33,10 +32,6 @@ class _MainMenuState extends State<MainMenu> {
   BluetoothDevice? _connectedDevice;
   bool _isConnected = false;
   StreamSubscription<BluetoothConnectionState>? _connectionSubscription;
-  
-  // Variabel Global RPM untuk Dashboard
-  int currentRpm = 0;
-  StreamSubscription? _rpmSubscription;
 
   void _onDeviceConnected(BluetoothDevice device) {
     _connectionSubscription?.cancel();
@@ -46,38 +41,8 @@ class _MainMenuState extends State<MainMenu> {
           _connectedDevice = device;
           _isConnected = state == BluetoothConnectionState.connected;
         });
-        if (_isConnected) _startRpmListener(device);
       }
     });
-  }
-
-  // Listener untuk menangkap data RPM secara global
-  void _startRpmListener(BluetoothDevice device) async {
-    List<BluetoothService> services = await device.discoverServices();
-    for (var s in services) {
-      for (var c in s.characteristics) {
-        if (c.uuid.toString() == "beb5483e-36e1-4688-b7f5-ea07361b26a8") {
-          await c.setNotifyValue(true);
-          _rpmSubscription = c.onValueReceived.listen((value) {
-            String data = utf8.decode(value);
-            if (data.startsWith("DAT_RPM|")) {
-              if (mounted) {
-                setState(() {
-                  currentRpm = int.tryParse(data.split('|')[1]) ?? 0;
-                });
-              }
-            }
-          });
-        }
-      }
-    }
-  }
-
-  @override
-  void dispose() {
-    _connectionSubscription?.cancel();
-    _rpmSubscription?.cancel();
-    super.dispose();
   }
 
   @override
@@ -124,7 +89,6 @@ class _MainMenuState extends State<MainMenu> {
             ],
           ),
         ),
-        
         Expanded(
           child: GridView.count(
             crossAxisCount: 2,
@@ -132,16 +96,12 @@ class _MainMenuState extends State<MainMenu> {
             mainAxisSpacing: 15,
             crossAxisSpacing: 15,
             children: [
-              _menuCard("QUICKSHIFTER", Icons.bolt, true, () {
-                Navigator.push(context, MaterialPageRoute(builder: (context) => QsDetailScreen(device: _connectedDevice)));
-              }),
-              _menuCard("LIVE RPM", Icons.analytics, true, () {
-                Navigator.push(context, MaterialPageRoute(builder: (context) => LiveRpmScreen(device: _connectedDevice)));
-              }),
-              _menuCard("LIMITER", Icons.speed, false, null),
-              _menuCard("TIMING KUDA", Icons.timer, false, null),
-              _menuCard("BACKFIRE", Icons.local_fire_department, false, null),
-              _menuCard("TABEL PENGAPIAN", Icons.grid_on, false, null),
+              _menuCard("QUICKSHIFTER", Icons.bolt, true),
+              _menuCard("LIMITER", Icons.speed, false),
+              _menuCard("TIMING KUDA", Icons.timer, false),
+              _menuCard("BACKFIRE", Icons.local_fire_department, false),
+              _menuCard("LIVE DATA ECU", Icons.analytics, true), // AKTIF
+              _menuCard("TABEL PENGAPIAN", Icons.grid_on, false),
             ],
           ),
         ),
@@ -149,9 +109,17 @@ class _MainMenuState extends State<MainMenu> {
     );
   }
 
-  Widget _menuCard(String title, IconData icon, bool active, VoidCallback? onTap) {
+  Widget _menuCard(String title, IconData icon, bool active) {
     return InkWell(
-      onTap: active ? onTap : null,
+      onTap: () {
+        if (active) {
+          if (title == "QUICKSHIFTER") {
+            Navigator.push(context, MaterialPageRoute(builder: (context) => QsDetailScreen(device: _connectedDevice)));
+          } else if (title == "LIVE DATA ECU") {
+            Navigator.push(context, MaterialPageRoute(builder: (context) => RpmDisplayScreen(device: _connectedDevice)));
+          }
+        }
+      },
       child: Container(
         decoration: BoxDecoration(
           color: const Color(0xFF1A1A1A),
@@ -168,15 +136,12 @@ class _MainMenuState extends State<MainMenu> {
             ),
             const SizedBox(height: 12),
             Text(title, textAlign: TextAlign.center, style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold, color: active ? Colors.white : Colors.grey)),
-            if (title == "LIVE RPM" && _isConnected) 
-              Text("$currentRpm", style: const TextStyle(color: Colors.cyanAccent, fontSize: 10)),
           ],
         ),
       ),
     );
   }
 
-  // --- BUILDER LAINNYA (BLE & SETTINGS) TETAP SAMA ---
   Widget _buildBlePage() {
     return Column(
       children: [
@@ -259,117 +224,201 @@ class _MainMenuState extends State<MainMenu> {
   }
 }
 
-// --- FITUR BARU: LIVE RPM SCREEN ---
-class LiveRpmScreen extends StatefulWidget {
+// -------------------------------------------------------------------
+// HALAMAN LIVE RPM DENGAN GRAFIK REAL-TIME
+// -------------------------------------------------------------------
+class RpmDisplayScreen extends StatefulWidget {
   final BluetoothDevice? device;
-  const LiveRpmScreen({super.key, this.device});
+  const RpmDisplayScreen({super.key, this.device});
 
   @override
-  State<LiveRpmScreen> createState() => _LiveRpmScreenState();
+  State<RpmDisplayScreen> createState() => _RpmDisplayScreenState();
 }
 
-class _LiveRpmScreenState extends State<LiveRpmScreen> {
-  List<FlSpot> rpmPoints = [];
-  double xValue = 0;
-  int currentRpm = 0;
-  StreamSubscription? _sub;
+class _RpmDisplayScreenState extends State<RpmDisplayScreen> {
+  int _currentRpm = 0;
+  List<int> _rpmHistory = [];
+  StreamSubscription? _notifySub;
+  final String serviceUuid = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
+  final String charUuid = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
 
   @override
   void initState() {
     super.initState();
-    _connectToRpmStream();
+    // Inisialisasi history agar grafik tidak melompat di awal
+    _rpmHistory = List.filled(40, 0); 
+    _startListening();
   }
 
-  void _connectToRpmStream() async {
+  void _startListening() async {
     if (widget.device == null) return;
-    List<BluetoothService> services = await widget.device!.discoverServices();
-    for (var s in services) {
-      for (var c in s.characteristics) {
-        if (c.uuid.toString() == "beb5483e-36e1-4688-b7f5-ea07361b26a8") {
-          _sub = c.onValueReceived.listen((value) {
-            String raw = utf8.decode(value);
-            if (raw.startsWith("DAT_RPM|")) {
-              int val = int.tryParse(raw.split('|')[1]) ?? 0;
-              _updateGraph(val.toDouble());
+    try {
+      List<BluetoothService> services = await widget.device!.discoverServices();
+      for (var s in services) {
+        if (s.uuid.toString().toLowerCase() == serviceUuid) {
+          for (var c in s.characteristics) {
+            if (c.uuid.toString().toLowerCase() == charUuid) {
+              await c.setNotifyValue(true);
+              _notifySub = c.onValueReceived.listen((value) {
+                String data = utf8.decode(value);
+                // Kita tangkap pesan DAT_RPM| dari ESP32
+                if (data.startsWith("DAT_RPM|")) {
+                  try {
+                    int val = int.parse(data.split('|')[1]);
+                    if (mounted) {
+                      setState(() {
+                        _currentRpm = val;
+                        _rpmHistory.add(val);
+                        if (_rpmHistory.length > 40) _rpmHistory.removeAt(0);
+                      });
+                    }
+                  } catch (e) { /* ignore parse error */ }
+                }
+              });
             }
-          });
+          }
         }
       }
-    }
-  }
-
-  void _updateGraph(double val) {
-    setState(() {
-      currentRpm = val.toInt();
-      rpmPoints.add(FlSpot(xValue, val));
-      xValue += 1;
-      // Batasi 50 titik (Data 10 Detik) agar tidak lemot
-      if (rpmPoints.length > 50) {
-        rpmPoints.removeAt(0);
-      }
-    });
+    } catch (e) { print("Error BLE: $e"); }
   }
 
   @override
   void dispose() {
-    _sub?.cancel();
+    _notifySub?.cancel();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text("LIVE TELEMETRY", style: GoogleFonts.orbitron(fontSize: 14))),
-      body: Column(
-        children: [
-          const SizedBox(height: 20),
-          // KOTAK GRAFIK
-          Container(
-            height: 300,
-            margin: const EdgeInsets.all(20),
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: const Color(0xFF1A1A1A),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: Colors.white10),
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: IconButton(icon: const Icon(Icons.arrow_back_ios), onPressed: () => Navigator.pop(context)),
+        title: Text("LIVE ECU DATA", style: GoogleFonts.orbitron(fontSize: 16, fontWeight: FontWeight.bold)),
+      ),
+      body: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        child: Column(
+          children: [
+            const SizedBox(height: 10),
+            // GRAFIK RPM
+            Container(
+              height: 220,
+              width: double.infinity,
+              padding: const EdgeInsets.all(15),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1A1A1A),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: Colors.white10),
+              ),
+              child: CustomPaint(
+                painter: RpmLinePainter(_rpmHistory),
+              ),
             ),
-            child: LineChart(
-              LineChartData(
-                minY: 0, maxY: 15000,
-                minX: rpmPoints.isNotEmpty ? rpmPoints.first.x : 0,
-                maxX: rpmPoints.isNotEmpty ? rpmPoints.last.x : 10,
-                gridData: FlGridData(show: true, drawVerticalLine: false, getDrawingHorizontalLine: (value) => FlLine(color: Colors.white10, strokeWidth: 1)),
-                titlesData: const FlTitlesData(show: false),
-                borderData: FlBorderData(show: false),
-                lineBarsData: [
-                  LineChartBarData(
-                    spots: rpmPoints,
-                    isCurved: true,
-                    color: Colors.cyanAccent,
-                    barWidth: 3,
-                    isStrokeCapRound: true,
-                    dotData: const FlDotData(show: false),
-                    belowBarData: BarAreaData(show: true, color: Colors.cyanAccent.withOpacity(0.1)),
+            const SizedBox(height: 30),
+            // DISPLAY DIGITAL
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 40),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1A1A1A),
+                borderRadius: BorderRadius.circular(25),
+                boxShadow: [
+                  BoxShadow(color: Colors.cyanAccent.withOpacity(0.05), blurRadius: 20, spreadRadius: 1)
+                ]
+              ),
+              child: Column(
+                children: [
+                  Text("ENGINE REVOLUTION", style: GoogleFonts.inter(color: Colors.grey, fontSize: 11, letterSpacing: 3)),
+                  const SizedBox(height: 10),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.baseline,
+                    textBaseline: TextBaseline.alphabetic,
+                    children: [
+                      Text("$_currentRpm", style: GoogleFonts.orbitron(fontSize: 60, fontWeight: FontWeight.bold, color: Colors.cyanAccent)),
+                      const SizedBox(width: 10),
+                      Text("RPM", style: GoogleFonts.orbitron(fontSize: 18, color: Colors.white24)),
+                    ],
                   ),
                 ],
               ),
             ),
-          ),
-          // DIGITAL RPM
-          Text("CURRENT ENGINE SPEED", style: GoogleFonts.inter(color: Colors.grey, letterSpacing: 1)),
-          const SizedBox(height: 10),
-          Text(
-            "$currentRpm",
-            style: GoogleFonts.orbitron(fontSize: 80, fontWeight: FontWeight.bold, color: Colors.cyanAccent),
-          ),
-          Text("RPM", style: GoogleFonts.orbitron(fontSize: 20, color: Colors.cyanAccent.withOpacity(0.5))),
-        ],
+            const Spacer(),
+            Text("SCALED: 0 - 15.000 RPM", style: GoogleFonts.inter(color: Colors.white10, fontSize: 10, letterSpacing: 1)),
+            const SizedBox(height: 30),
+          ],
+        ),
       ),
     );
   }
 }
 
-// --- SCREEN QUICKSHIFTER (KODE SEBELUMNYA TETAP ADA) ---
+// PAINTER UNTUK MENGGAMBAR GARIS GRAFIK TANPA LIBRARY
+class RpmLinePainter extends CustomPainter {
+  final List<int> points;
+  RpmLinePainter(this.points);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (points.isEmpty) return;
+
+    final paint = Paint()
+      ..color = Colors.cyanAccent
+      ..strokeWidth = 3.0
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+
+    final path = Path();
+    double gap = size.width / (points.length - 1);
+    double maxRpm = 15000; // Skala maksimal sesuai permintaan
+
+    for (int i = 0; i < points.length; i++) {
+      double x = i * gap;
+      // Normalisasi nilai RPM ke tinggi canvas (Inverted Y)
+      double val = points[i].toDouble().clamp(0, maxRpm);
+      double y = size.height - (val / maxRpm * size.height);
+      
+      if (i == 0) {
+        path.moveTo(x, y);
+      } else {
+        path.lineTo(x, y);
+      }
+    }
+
+    // Gambar Garis Grid Horizontal Tipis
+    final gridPaint = Paint()..color = Colors.white.withOpacity(0.05)..strokeWidth = 1;
+    for(int i=1; i<=3; i++) {
+      double yGrid = size.height / 4 * i;
+      canvas.drawLine(Offset(0, yGrid), Offset(size.width, yGrid), gridPaint);
+    }
+
+    canvas.drawPath(path, paint);
+
+    // Tambahkan Efek Area Glow di bawah garis
+    final areaPath = Path.from(path)
+      ..lineTo(size.width, size.height)
+      ..lineTo(0, size.height)
+      ..close();
+    
+    final areaPaint = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [Colors.cyanAccent.withOpacity(0.2), Colors.transparent],
+      ).createShader(Rect.fromLTWH(0, 0, size.width, size.height));
+    
+    canvas.drawPath(areaPath, areaPaint);
+  }
+
+  @override
+  bool shouldRepaint(RpmLinePainter oldDelegate) => true;
+}
+
+// -------------------------------------------------------------------
+// HALAMAN QUICKSHIFTER (TETAP SAMA)
+// -------------------------------------------------------------------
 class QsDetailScreen extends StatefulWidget {
   final BluetoothDevice? device;
   const QsDetailScreen({super.key, this.device});
@@ -395,35 +444,45 @@ class _QsDetailScreenState extends State<QsDetailScreen> {
 
   void _initBleSync() async {
     if (widget.device == null) return;
-    List<BluetoothService> services = await widget.device!.discoverServices();
-    for (var s in services) {
-      if (s.uuid.toString() == serviceUuid) {
-        for (var c in s.characteristics) {
-          if (c.uuid.toString() == charUuid) {
-            _targetChar = c;
-            await c.setNotifyValue(true);
-            _notifySub = c.onValueReceived.listen((value) {
-              String data = utf8.decode(value);
-              if (data.startsWith("ACK_QS")) {
-                List<String> parts = data.split('|');
-                setState(() {
-                  _isOn = parts[1].split(':')[1] == '1';
-                  _cutTime = double.parse(parts[2].split(':')[1]);
-                  _valTime = double.parse(parts[3].split(':')[1]);
-                });
-              }
-            });
-            await c.write(utf8.encode("GET_QS")); 
+    try {
+      List<BluetoothService> services = await widget.device!.discoverServices();
+      for (var s in services) {
+        if (s.uuid.toString().toLowerCase() == serviceUuid) {
+          for (var c in s.characteristics) {
+            if (c.uuid.toString().toLowerCase() == charUuid) {
+              _targetChar = c;
+              await c.setNotifyValue(true);
+              _notifySub = c.onValueReceived.listen((value) {
+                String data = utf8.decode(value);
+                if (data.startsWith("ACK_QS")) {
+                  List<String> parts = data.split('|');
+                  setState(() {
+                    _isOn = parts[1].split(':')[1] == '1';
+                    _cutTime = double.parse(parts[2].split(':')[1]);
+                    _valTime = double.parse(parts[3].split(':')[1]);
+                  });
+                }
+              });
+              await Future.delayed(const Duration(milliseconds: 500));
+              await c.write(utf8.encode("GET_QS")); 
+            }
           }
         }
       }
-    }
+    } catch(e) { print(e); }
   }
 
   void _sendData() async {
     if (_targetChar == null) return;
-    await _targetChar!.write(utf8.encode("QSSET|E:${_isOn?1:0}|C:${_cutTime.toInt()}|V:${_valTime.toInt()}"));
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("SAVE SUCCESS")));
+    try {
+      String payload = "QSSET|E:${_isOn ? 1 : 0}|C:${_cutTime.toInt()}|V:${_valTime.toInt()}";
+      await _targetChar!.write(utf8.encode(payload));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(backgroundColor: Colors.cyanAccent, content: Text("SAVE SUCCESS", style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)))
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Gagal menyimpan ke ECU")));
+    }
   }
 
   @override
@@ -435,51 +494,57 @@ class _QsDetailScreenState extends State<QsDetailScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("QS CONFIG")),
+      backgroundColor: const Color(0xFF0F0F0F),
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: IconButton(icon: const Icon(Icons.arrow_back_ios, size: 20), onPressed: () => Navigator.pop(context)),
+        title: Text("QS CONFIG", style: GoogleFonts.orbitron(fontSize: 14, fontWeight: FontWeight.bold)),
+      ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(25),
+        padding: const EdgeInsets.symmetric(horizontal: 20),
         child: Column(
           children: [
+            const SizedBox(height: 10),
             Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(color: const Color(0xFF1A1A1A), borderRadius: BorderRadius.circular(20)),
-              child: SwitchListTile(
-                title: const Text("POWER STATUS"),
-                value: _isOn,
-                activeColor: Colors.cyanAccent,
-                onChanged: (v) => setState(() => _isOn = v),
+              padding: const EdgeInsets.all(15),
+              decoration: BoxDecoration(color: const Color(0xFF1A1A1A), borderRadius: BorderRadius.circular(15)),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text("POWER STATUS", style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 13)),
+                  Switch(
+                    value: _isOn,
+                    activeColor: Colors.cyanAccent,
+                    onChanged: (v) => setState(() => _isOn = v),
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 20),
-            _buildSliderCard("IGNITION CUT", _cutTime, 30, 200, (v) => setState(() => _cutTime = v)),
-            const SizedBox(height: 20),
-            _buildSliderCard("SENSOR DELAY", _valTime, 0, 50, (v) => setState(() => _valTime = v)),
-            const SizedBox(height: 50),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.cyanAccent, minimumSize: const Size(double.infinity, 60)),
-              onPressed: _sendData,
-              child: const Text("SAVE", style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+            Row(
+              children: [
+                _presetBtn("RACING", "40ms", _cutTime == 40, () => setState(() => _cutTime = 40)),
+                const SizedBox(width: 10),
+                _presetBtn("STANDARD", "75ms", _cutTime == 75, () => setState(() => _cutTime = 75)),
+              ],
             ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSliderCard(String title, double val, double min, double max, Function(double) onChanged) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(color: const Color(0xFF1A1A1A), borderRadius: BorderRadius.circular(20)),
-      child: Column(
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [Text(title), Text("${val.toInt()} ms", style: const TextStyle(color: Colors.cyanAccent))],
-          ),
-          Slider(value: val, min: min, max: max, activeColor: Colors.cyanAccent, onChanged: onChanged),
-        ],
-      ),
-    );
-  }
-}
-
+            const SizedBox(height: 30),
+            Text("${_cutTime.toInt()} ms", style: GoogleFonts.orbitron(fontSize: 40, fontWeight: FontWeight.bold, color: Colors.white)),
+            Slider(
+              value: _cutTime, min: 30, max: 200,
+              activeColor: Colors.cyanAccent,
+              onChanged: (v) => setState(() => _cutTime = v),
+            ),
+            const SizedBox(height: 30),
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(color: const Color(0xFF1A1A1A), borderRadius: BorderRadius.circular(15)),
+              child: Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text("IGNITION DELAY", style: GoogleFonts.inter(fontSize: 12, color: Colors.white70)),
+                      Text("${_valTime.toInt()} ms", style: GoogleFonts.orbitron(fontSize: 12, color: Colors.white)),
+                  
