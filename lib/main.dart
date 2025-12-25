@@ -547,4 +547,50 @@ class _QsDetailScreenState extends State<QsDetailScreen> {
                     children: [
                       Text("IGNITION DELAY", style: GoogleFonts.inter(fontSize: 12, color: Colors.white70)),
                       Text("${_valTime.toInt()} ms", style: GoogleFonts.orbitron(fontSize: 12, color: Colors.white)),
-                  
+                    ],
+                  ),
+                  Slider(
+                    value: _valTime, min: 0, max: 50,
+                    activeColor: Colors.cyanAccent,
+                    onChanged: (v) => setState(() => _valTime = v),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 40),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.cyanAccent,
+                minimumSize: const Size(double.infinity, 55),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              onPressed: _sendData,
+              child: const Text("SAVE", style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _presetBtn(String label, String ms, bool active, VoidCallback onTap) {
+    return Expanded(
+      child: InkWell(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          decoration: BoxDecoration(
+            color: active ? Colors.cyanAccent : const Color(0xFF1A1A1A),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Column(
+            children: [
+              Text(label, style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold, color: active ? Colors.black : Colors.white)),
+              Text(ms, style: GoogleFonts.inter(fontSize: 9, color: active ? Colors.black54 : Colors.grey)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
