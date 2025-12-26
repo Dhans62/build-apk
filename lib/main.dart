@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:async';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -100,7 +101,7 @@ class _MainMenuState extends State<MainMenu> {
               _menuCard("LIMITER", Icons.speed, false),
               _menuCard("TIMING KUDA", Icons.timer, false),
               _menuCard("BACKFIRE", Icons.local_fire_department, false),
-              _menuCard("LIVE DATA ECU", Icons.analytics, true), // AKTIF
+              _menuCard("LIVE DATA ECU", Icons.analytics, false),
               _menuCard("TABEL PENGAPIAN", Icons.grid_on, false),
             ],
           ),
@@ -113,11 +114,7 @@ class _MainMenuState extends State<MainMenu> {
     return InkWell(
       onTap: () {
         if (active) {
-          if (title == "QUICKSHIFTER") {
-            Navigator.push(context, MaterialPageRoute(builder: (context) => QsDetailScreen(device: _connectedDevice)));
-          } else if (title == "LIVE DATA ECU") {
-            Navigator.push(context, MaterialPageRoute(builder: (context) => RpmDisplayScreen(device: _connectedDevice)));
-          }
+          Navigator.push(context, MaterialPageRoute(builder: (context) => QsDetailScreen(device: _connectedDevice)));
         }
       },
       child: Container(
@@ -224,201 +221,6 @@ class _MainMenuState extends State<MainMenu> {
   }
 }
 
-// -------------------------------------------------------------------
-// HALAMAN LIVE RPM DENGAN GRAFIK REAL-TIME
-// -------------------------------------------------------------------
-class RpmDisplayScreen extends StatefulWidget {
-  final BluetoothDevice? device;
-  const RpmDisplayScreen({super.key, this.device});
-
-  @override
-  State<RpmDisplayScreen> createState() => _RpmDisplayScreenState();
-}
-
-class _RpmDisplayScreenState extends State<RpmDisplayScreen> {
-  int _currentRpm = 0;
-  List<int> _rpmHistory = [];
-  StreamSubscription? _notifySub;
-  final String serviceUuid = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
-  final String charUuid = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
-
-  @override
-  void initState() {
-    super.initState();
-    // Inisialisasi history agar grafik tidak melompat di awal
-    _rpmHistory = List.filled(40, 0); 
-    _startListening();
-  }
-
-  void _startListening() async {
-    if (widget.device == null) return;
-    try {
-      List<BluetoothService> services = await widget.device!.discoverServices();
-      for (var s in services) {
-        if (s.uuid.toString().toLowerCase() == serviceUuid) {
-          for (var c in s.characteristics) {
-            if (c.uuid.toString().toLowerCase() == charUuid) {
-              await c.setNotifyValue(true);
-              _notifySub = c.onValueReceived.listen((value) {
-                String data = utf8.decode(value);
-                // Kita tangkap pesan DAT_RPM| dari ESP32
-                if (data.startsWith("DAT_RPM|")) {
-                  try {
-                    int val = int.parse(data.split('|')[1]);
-                    if (mounted) {
-                      setState(() {
-                        _currentRpm = val;
-                        _rpmHistory.add(val);
-                        if (_rpmHistory.length > 40) _rpmHistory.removeAt(0);
-                      });
-                    }
-                  } catch (e) { /* ignore parse error */ }
-                }
-              });
-            }
-          }
-        }
-      }
-    } catch (e) { print("Error BLE: $e"); }
-  }
-
-  @override
-  void dispose() {
-    _notifySub?.cancel();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: IconButton(icon: const Icon(Icons.arrow_back_ios), onPressed: () => Navigator.pop(context)),
-        title: Text("LIVE ECU DATA", style: GoogleFonts.orbitron(fontSize: 16, fontWeight: FontWeight.bold)),
-      ),
-      body: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20),
-        child: Column(
-          children: [
-            const SizedBox(height: 10),
-            // GRAFIK RPM
-            Container(
-              height: 220,
-              width: double.infinity,
-              padding: const EdgeInsets.all(15),
-              decoration: BoxDecoration(
-                color: const Color(0xFF1A1A1A),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: Colors.white10),
-              ),
-              child: CustomPaint(
-                painter: RpmLinePainter(_rpmHistory),
-              ),
-            ),
-            const SizedBox(height: 30),
-            // DISPLAY DIGITAL
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 40),
-              decoration: BoxDecoration(
-                color: const Color(0xFF1A1A1A),
-                borderRadius: BorderRadius.circular(25),
-                boxShadow: [
-                  BoxShadow(color: Colors.cyanAccent.withOpacity(0.05), blurRadius: 20, spreadRadius: 1)
-                ]
-              ),
-              child: Column(
-                children: [
-                  Text("ENGINE REVOLUTION", style: GoogleFonts.inter(color: Colors.grey, fontSize: 11, letterSpacing: 3)),
-                  const SizedBox(height: 10),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.baseline,
-                    textBaseline: TextBaseline.alphabetic,
-                    children: [
-                      Text("$_currentRpm", style: GoogleFonts.orbitron(fontSize: 60, fontWeight: FontWeight.bold, color: Colors.cyanAccent)),
-                      const SizedBox(width: 10),
-                      Text("RPM", style: GoogleFonts.orbitron(fontSize: 18, color: Colors.white24)),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            const Spacer(),
-            Text("SCALED: 0 - 15.000 RPM", style: GoogleFonts.inter(color: Colors.white10, fontSize: 10, letterSpacing: 1)),
-            const SizedBox(height: 30),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// PAINTER UNTUK MENGGAMBAR GARIS GRAFIK TANPA LIBRARY
-class RpmLinePainter extends CustomPainter {
-  final List<int> points;
-  RpmLinePainter(this.points);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (points.isEmpty) return;
-
-    final paint = Paint()
-      ..color = Colors.cyanAccent
-      ..strokeWidth = 3.0
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round;
-
-    final path = Path();
-    double gap = size.width / (points.length - 1);
-    double maxRpm = 15000; // Skala maksimal sesuai permintaan
-
-    for (int i = 0; i < points.length; i++) {
-      double x = i * gap;
-      // Normalisasi nilai RPM ke tinggi canvas (Inverted Y)
-      double val = points[i].toDouble().clamp(0, maxRpm);
-      double y = size.height - (val / maxRpm * size.height);
-      
-      if (i == 0) {
-        path.moveTo(x, y);
-      } else {
-        path.lineTo(x, y);
-      }
-    }
-
-    // Gambar Garis Grid Horizontal Tipis
-    final gridPaint = Paint()..color = Colors.white.withOpacity(0.05)..strokeWidth = 1;
-    for(int i=1; i<=3; i++) {
-      double yGrid = size.height / 4 * i;
-      canvas.drawLine(Offset(0, yGrid), Offset(size.width, yGrid), gridPaint);
-    }
-
-    canvas.drawPath(path, paint);
-
-    // Tambahkan Efek Area Glow di bawah garis
-    final areaPath = Path.from(path)
-      ..lineTo(size.width, size.height)
-      ..lineTo(0, size.height)
-      ..close();
-    
-    final areaPaint = Paint()
-      ..shader = LinearGradient(
-        begin: Alignment.topCenter,
-        end: Alignment.bottomCenter,
-        colors: [Colors.cyanAccent.withOpacity(0.2), Colors.transparent],
-      ).createShader(Rect.fromLTWH(0, 0, size.width, size.height));
-    
-    canvas.drawPath(areaPath, areaPaint);
-  }
-
-  @override
-  bool shouldRepaint(RpmLinePainter oldDelegate) => true;
-}
-
-// -------------------------------------------------------------------
-// HALAMAN QUICKSHIFTER (TETAP SAMA)
-// -------------------------------------------------------------------
 class QsDetailScreen extends StatefulWidget {
   final BluetoothDevice? device;
   const QsDetailScreen({super.key, this.device});
@@ -453,15 +255,7 @@ class _QsDetailScreenState extends State<QsDetailScreen> {
               _targetChar = c;
               await c.setNotifyValue(true);
               _notifySub = c.onValueReceived.listen((value) {
-                String data = utf8.decode(value);
-                if (data.startsWith("ACK_QS")) {
-                  List<String> parts = data.split('|');
-                  setState(() {
-                    _isOn = parts[1].split(':')[1] == '1';
-                    _cutTime = double.parse(parts[2].split(':')[1]);
-                    _valTime = double.parse(parts[3].split(':')[1]);
-                  });
-                }
+                _parseEcuData(utf8.decode(value));
               });
               await Future.delayed(const Duration(milliseconds: 500));
               await c.write(utf8.encode("GET_QS")); 
@@ -472,11 +266,24 @@ class _QsDetailScreenState extends State<QsDetailScreen> {
     } catch(e) { print(e); }
   }
 
+  void _parseEcuData(String data) {
+    if (data.startsWith("ACK_QS")) {
+      List<String> parts = data.split('|');
+      setState(() {
+        _isOn = parts[1].split(':')[1] == '1';
+        _cutTime = double.parse(parts[2].split(':')[1]);
+        _valTime = double.parse(parts[3].split(':')[1]);
+      });
+    }
+  }
+
   void _sendData() async {
     if (_targetChar == null) return;
     try {
+      // ATOMIC UPDATE: Mengirim satu string tunggal agar aman di Preferences ESP32
       String payload = "QSSET|E:${_isOn ? 1 : 0}|C:${_cutTime.toInt()}|V:${_valTime.toInt()}";
       await _targetChar!.write(utf8.encode(payload));
+      
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(backgroundColor: Colors.cyanAccent, content: Text("SAVE SUCCESS", style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)))
       );
@@ -499,13 +306,17 @@ class _QsDetailScreenState extends State<QsDetailScreen> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(icon: const Icon(Icons.arrow_back_ios, size: 20), onPressed: () => Navigator.pop(context)),
-        title: Text("QS CONFIG", style: GoogleFonts.orbitron(fontSize: 14, fontWeight: FontWeight.bold)),
+        title: Text("QUICKSHIFTER CONFIG", style: GoogleFonts.orbitron(fontSize: 14, fontWeight: FontWeight.bold, letterSpacing: 1)),
+        actions: [
+           IconButton(onPressed: () {}, icon: const Icon(Icons.bluetooth_connected, color: Colors.cyanAccent, size: 20)),
+        ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.symmetric(horizontal: 20),
         child: Column(
           children: [
             const SizedBox(height: 10),
+            // POWER STATUS CARD
             Container(
               padding: const EdgeInsets.all(15),
               decoration: BoxDecoration(color: const Color(0xFF1A1A1A), borderRadius: BorderRadius.circular(15)),
@@ -513,30 +324,68 @@ class _QsDetailScreenState extends State<QsDetailScreen> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text("POWER STATUS", style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 13)),
-                  Switch(
-                    value: _isOn,
-                    activeColor: Colors.cyanAccent,
-                    onChanged: (v) => setState(() => _isOn = v),
-                  ),
+                  Row(
+                    children: [
+                      Text(_isOn ? "ON" : "OFF", style: GoogleFonts.inter(color: _isOn ? Colors.cyanAccent : Colors.grey, fontWeight: FontWeight.bold, fontSize: 12)),
+                      const SizedBox(width: 10),
+                      Transform.scale(
+                        scale: 0.8,
+                        child: Switch(
+                          value: _isOn,
+                          activeColor: Colors.cyanAccent,
+                          onChanged: (v) => setState(() => _isOn = v),
+                        ),
+                      ),
+                    ],
+                  )
                 ],
               ),
             ),
             const SizedBox(height: 20),
+            // PRESET BUTTONS
             Row(
               children: [
                 _presetBtn("RACING", "40ms", _cutTime == 40, () => setState(() => _cutTime = 40)),
                 const SizedBox(width: 10),
                 _presetBtn("STANDARD", "75ms", _cutTime == 75, () => setState(() => _cutTime = 75)),
+                const SizedBox(width: 10),
+                _presetBtn("CUSTOM", "", _cutTime != 40 && _cutTime != 75, () {}),
               ],
             ),
             const SizedBox(height: 30),
-            Text("${_cutTime.toInt()} ms", style: GoogleFonts.orbitron(fontSize: 40, fontWeight: FontWeight.bold, color: Colors.white)),
+            // GAUGE CUSTOM IMITATION
+            Stack(
+              alignment: Alignment.center,
+              children: [
+                SizedBox(
+                  width: 220, height: 220,
+                  child: CircularProgressIndicator(
+                    value: _cutTime / 200,
+                    strokeWidth: 8,
+                    backgroundColor: Colors.white10,
+                    valueColor: const AlwaysStoppedAnimation<Color>(Colors.cyanAccent),
+                  ),
+                ),
+                Column(
+                  children: [
+                    Text("${_cutTime.toInt()}", style: GoogleFonts.orbitron(fontSize: 48, fontWeight: FontWeight.bold, color: Colors.white)),
+                    Text("ms", style: GoogleFonts.inter(fontSize: 16, color: Colors.grey)),
+                  ],
+                ),
+                Positioned(
+                  bottom: 30,
+                  child: Text("CUSTOM", style: GoogleFonts.inter(fontSize: 10, color: Colors.grey, letterSpacing: 2)),
+                ),
+                // Slider invisible over gauge or below it
+              ],
+            ),
             Slider(
               value: _cutTime, min: 30, max: 200,
               activeColor: Colors.cyanAccent,
               onChanged: (v) => setState(() => _cutTime = v),
             ),
             const SizedBox(height: 30),
+            // IGNITION DELAY SLIDER
             Container(
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(color: const Color(0xFF1A1A1A), borderRadius: BorderRadius.circular(15)),
@@ -545,7 +394,7 @@ class _QsDetailScreenState extends State<QsDetailScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text("IGNITION DELAY", style: GoogleFonts.inter(fontSize: 12, color: Colors.white70)),
+                      Text("IGNITION DELAY (ms)", style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white70)),
                       Text("${_valTime.toInt()} ms", style: GoogleFonts.orbitron(fontSize: 12, color: Colors.white)),
                     ],
                   ),
@@ -558,6 +407,7 @@ class _QsDetailScreenState extends State<QsDetailScreen> {
               ),
             ),
             const SizedBox(height: 40),
+            // SAVE BUTTON
             ElevatedButton(
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.cyanAccent,
@@ -565,8 +415,9 @@ class _QsDetailScreenState extends State<QsDetailScreen> {
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
               ),
               onPressed: _sendData,
-              child: const Text("SAVE", style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+              child: Text("SAVE", style: GoogleFonts.inter(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 14)),
             ),
+            const SizedBox(height: 20),
           ],
         ),
       ),
@@ -586,7 +437,7 @@ class _QsDetailScreenState extends State<QsDetailScreen> {
           child: Column(
             children: [
               Text(label, style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold, color: active ? Colors.black : Colors.white)),
-              Text(ms, style: GoogleFonts.inter(fontSize: 9, color: active ? Colors.black54 : Colors.grey)),
+              if (ms.isNotEmpty) Text(ms, style: GoogleFonts.inter(fontSize: 9, color: active ? Colors.black54 : Colors.grey)),
             ],
           ),
         ),
