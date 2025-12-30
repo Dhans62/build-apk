@@ -1,0 +1,1 @@
+nohup python ds_gui.py > ds_ai.log 2>&1 &
