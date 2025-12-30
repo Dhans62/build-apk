@@ -199,7 +199,7 @@ def index():
 </html>
 """)
 
-  @app.route('/chat', methods=['POST'])
+@app.route('/chat', methods=['POST'])
 def chat():
     data = request.json
     user_prompt = data.get('prompt')
