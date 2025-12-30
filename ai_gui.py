@@ -53,8 +53,7 @@ def run_flutter_check(filename):
         return False, result.stdout
     except:
         return True, "Dart SDK not found"
-
-  def call_gemini_smart(prompt, history, keys):
+def call_gemini_smart(prompt, history, keys):
     if not keys: return "ERROR: API Keys tidak terdeteksi!", "None"
     
     for i, key in enumerate(keys):
