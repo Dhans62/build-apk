@@ -129,51 +129,43 @@ def index():
     <title>DS-AI v4.1 ARCHITECT</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <style>
-        body { background: #050505; color: #cbd5e1; font-family: 'Courier New', monospace; height: 100dvh; display: flex; flex-direction: column; }
-        ::-webkit-scrollbar { width: 3px; }
-        ::-webkit-scrollbar-thumb { background: #334155; }
-        .terminal-text { text-shadow: 0 0 5px rgba(6, 182, 212, 0.5); }
-        
-        /* CSS Untuk Tabel agar rapi di Mobile */
-        .markdown-content table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 10px; background: #0f172a; border-radius: 4px; overflow: hidden; }
-        .markdown-content th { background: #1e293b; color: #22d3ee; padding: 8px; text-align: left; border: 1px solid #334155; }
-        .markdown-content td { padding: 8px; border: 1px solid #334155; vertical-align: top; }
-        .markdown-content tr:nth-child(even) { background: #111827; }
-        .markdown-content code { background: #1e293b; color: #f472b6; padding: 2px 4px; border-radius: 4px; }
+        body { background: #050505; color: #cbd5e1; font-family: 'Inter', sans-serif; height: 100dvh; display: flex; flex-direction: column; }
+        .markdown-content table { width: 100%; border-collapse: collapse; margin: 15px 0; font-size: 11px; border: 1px solid #1e293b; }
+        .markdown-content th { background: #1e293b; color: #22d3ee; padding: 10px; text-align: left; border-bottom: 2px solid #0891b2; }
+        .markdown-content td { padding: 10px; border: 1px solid #1e293b; line-height: 1.4; vertical-align: top; }
+        .markdown-content tr:nth-child(even) { background: #0f172a; }
+        pre { background: #000 !important; padding: 10px; border-radius: 5px; border: 1px solid #334155; overflow-x: auto; }
     </style>
 </head>
 <body class="p-2 overflow-hidden">
     <div class="border-b border-cyan-900/50 pb-2 mb-2 flex justify-between items-center bg-[#050505]">
         <div class="flex flex-col">
-            <span class="text-cyan-500 font-bold text-sm tracking-tighter terminal-text uppercase">DS-AI v4.1 Architect</span>
-            <div id="model-tag" class="text-[8px] text-slate-500 uppercase">SYSTEM: READY</div>
+            <span class="text-cyan-500 font-bold text-sm tracking-tighter uppercase">DS-AI v4.1 Architect</span>
+            <div id="model-tag" class="text-[8px] text-slate-500 uppercase">SYSTEM: {{ model_used }}</div>
         </div>
-        <button onclick="finalPush()" class="bg-green-600 text-white text-[10px] px-3 py-1.5 rounded font-bold active:scale-95 shadow-lg shadow-green-900/20">PUSH TO GITHUB</button>
+        <button onclick="finalPush()" class="bg-green-600 text-white text-[10px] px-3 py-1.5 rounded font-bold active:scale-95">PUSH TO GITHUB</button>
     </div>
 
-    <div class="flex-1 flex flex-col min-h-0 bg-[#0a0a0a] border border-slate-800 rounded-lg overflow-hidden">
-        <div id="chat-container" class="flex-1 overflow-y-auto p-3 space-y-4 text-[11px]">
-            <div class="text-cyan-800 italic border-b border-slate-900 pb-2">--- VISUAL ENGINE ENHANCED ---</div>
+    <div class="flex-1 flex flex-col min-h-0 bg-[#0a0a0a] border border-slate-800 rounded-lg">
+        <div id="chat-container" class="flex-1 overflow-y-auto p-4 space-y-4 text-[12px]">
+            <div class="text-cyan-800 italic border-b border-slate-900 pb-2 text-[10px]">--- SESSION ACTIVE ---</div>
         </div>
-        
-        <div id="status-bar" class="bg-black/50 border-t border-slate-800 px-3 py-1.5 text-[9px] text-amber-500 font-mono h-14 overflow-y-auto italic">
-            > Ready for strategic commands...
+        <div id="status-bar" class="bg-black/50 border-t border-slate-800 px-3 py-2 text-[10px] text-amber-500 font-mono h-16 overflow-y-auto italic">
+            > Standby...
         </div>
-
         <div class="p-2 bg-slate-900/80 border-t border-slate-700">
             <div class="flex gap-2">
-                <input type="text" id="user-input" placeholder="Type command..." class="flex-1 bg-black border-2 border-slate-700 rounded px-3 py-3 text-sm text-cyan-400 focus:border-cyan-500 outline-none transition-colors">
-                <button onclick="send()" id="btn" class="bg-cyan-600 text-black font-black px-5 rounded active:scale-90 transition-transform">GO</button>
+                <input type="text" id="user-input" placeholder="Ketik perintah..." class="flex-1 bg-black border-2 border-slate-700 rounded px-4 py-3 text-sm text-cyan-400 focus:border-cyan-500 outline-none">
+                <button onclick="send()" id="btn" class="bg-cyan-600 text-black font-black px-5 rounded active:scale-90">GO</button>
             </div>
         </div>
     </div>
 
     <script>
-        // Konfigurasi Marked agar aman
-        marked.setOptions({ gfm: true, breaks: true });
-
         async function send() {
             const input = document.getElementById('user-input');
             const chat = document.getElementById('chat-container');
@@ -184,8 +176,8 @@ def index():
             const prompt = input.value;
             input.value = ''; btn.disabled = true;
             
-            status.innerHTML = `<span class="animate-pulse text-cyan-400">> RENDERING ARCHITECTURAL DATA...</span>`;
-            chat.innerHTML += `<div class="text-right"><span class="bg-slate-800 px-3 py-2 rounded-lg inline-block max-w-[85%] border border-slate-700">${prompt}</span></div>`;
+            chat.innerHTML += `<div class="text-right"><span class="bg-slate-800 px-4 py-2 rounded-lg inline-block max-w-[85%]">${prompt}</span></div>`;
+            status.innerHTML = `<span class="animate-pulse text-cyan-400">> PROCESSING...</span>`;
 
             try {
                 const res = await fetch('/chat', {
@@ -195,28 +187,22 @@ def index():
                 });
                 const data = await res.json();
                 
-                // PARSING MARKDOWN UNTUK TABEL
-                const htmlContent = marked.parse(data.response);
+                // RENDER MARKDOWN KE HTML
+                const rendered = marked.parse(data.response);
+                chat.innerHTML += `<div class="bg-slate-900/40 border-l-2 border-cyan-600 p-4 rounded text-slate-300 markdown-content">${rendered}</div>`;
                 
-                chat.innerHTML += `
-                    <div class="bg-slate-900/40 border-l-2 border-cyan-600 p-3 rounded text-slate-300 markdown-content">
-                        ${htmlContent}
-                    </div>`;
-                
-                status.innerHTML = data.actions.map(a => `<div>> ${a}</div>`).join('') || "> Operation Successful.";
-                document.getElementById('model-tag').innerText = "SYSTEM: " + data.model;
+                status.innerHTML = data.actions.map(a => `<div class="text-green-400">> ${a}</div>`).join('') || "> Task Finished.";
+                Prism.highlightAll();
                 chat.scrollTop = chat.scrollHeight;
-                status.scrollTop = status.scrollHeight;
             } catch (e) {
-                status.innerHTML = `<span class="text-red-500">> ERROR: Kernel Panic or Connection Lost</span>`;
+                status.innerHTML = `<span class="text-red-500">> ERROR CONNECTION</span>`;
             } finally { btn.disabled = false; }
         }
 
         async function finalPush() {
             if(!confirm("Push to GitHub?")) return;
             const res = await fetch('/commit', {method: 'POST'});
-            const data = await res.json();
-            alert(data.log);
+            const data = await res.json(); alert(data.log);
         }
         document.getElementById('user-input').addEventListener('keypress', (e) => { if(e.key === 'Enter') send(); });
     </script>
