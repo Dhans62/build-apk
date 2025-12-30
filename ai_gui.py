@@ -11,15 +11,18 @@ HISTORY_FILE = "ds_history.json"
 # System Prompt yang diperkuat untuk Kesadaran Konteks
 SYSTEM_PROMPT = """Anda adalah DS-AI v4.1 Architect. 
 Tugas: Koding Flutter/Dart, Manajemen File, dan Debugging.
-Kekuatan Otonom:
-1. Menulis/Edit: [WRITE_FILE: path/file.dart] kode [/WRITE_FILE]
-2. Menghapus: [REMOVE: path/to/target] (bisa file atau folder)
-3. Rename/Move: [RENAME: old_path -> new_path]
-4. Buat Folder: [CREATE_FOLDER: path/folder]
-5. Penjelasan: Berikan [LOG: alasan] singkat sebelum bertindak.
 
+ATURAN OUTPUT:
+1. Setiap jawaban WAJIB dimulai dengan [LOG: alasan tindakan].
+2. Jika ditanya status atau rencana, WAJIB sajikan dalam TABEL MARKDOWN.
+3. Gunakan format otonom berikut untuk perubahan file:
+   - Menulis: [WRITE_FILE: path] kode [/WRITE_FILE]
+   - Menghapus: [REMOVE: path]
+   - Folder: [CREATE_FOLDER: path]
+
+Gunakan 'STRUKTUR FILE SAAT INI' yang dikirim user untuk memvalidasi keberadaan file. 
+DILARANG memberikan paragraf panjang. Jadilah singkat, padat, dan teknis.
 PENTING: Gunakan 'STRUKTUR FILE SAAT INI' yang diberikan untuk menentukan lokasi file secara akurat. Jangan menghapus ai_gui.py."""
-
 def get_api_keys():
     keys_raw = os.environ.get('GEMINI_KEYS')
     if not keys_raw: return []
@@ -125,12 +128,20 @@ def index():
 <head>
     <title>DS-AI v4.1 ARCHITECT</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <style>
-        body { background: #050505; color: #cbd5e1; font-family: monospace; height: 100dvh; display: flex; flex-direction: column; }
+        body { background: #050505; color: #cbd5e1; font-family: 'Courier New', monospace; height: 100dvh; display: flex; flex-direction: column; }
         ::-webkit-scrollbar { width: 3px; }
         ::-webkit-scrollbar-thumb { background: #334155; }
         .terminal-text { text-shadow: 0 0 5px rgba(6, 182, 212, 0.5); }
+        
+        /* CSS Untuk Tabel agar rapi di Mobile */
+        .markdown-content table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 10px; background: #0f172a; border-radius: 4px; overflow: hidden; }
+        .markdown-content th { background: #1e293b; color: #22d3ee; padding: 8px; text-align: left; border: 1px solid #334155; }
+        .markdown-content td { padding: 8px; border: 1px solid #334155; vertical-align: top; }
+        .markdown-content tr:nth-child(even) { background: #111827; }
+        .markdown-content code { background: #1e293b; color: #f472b6; padding: 2px 4px; border-radius: 4px; }
     </style>
 </head>
 <body class="p-2 overflow-hidden">
@@ -139,24 +150,30 @@ def index():
             <span class="text-cyan-500 font-bold text-sm tracking-tighter terminal-text uppercase">DS-AI v4.1 Architect</span>
             <div id="model-tag" class="text-[8px] text-slate-500 uppercase">SYSTEM: READY</div>
         </div>
-        <button onclick="finalPush()" class="bg-green-600 text-white text-[10px] px-3 py-1.5 rounded font-bold active:scale-95">PUSH TO GITHUB</button>
+        <button onclick="finalPush()" class="bg-green-600 text-white text-[10px] px-3 py-1.5 rounded font-bold active:scale-95 shadow-lg shadow-green-900/20">PUSH TO GITHUB</button>
     </div>
 
     <div class="flex-1 flex flex-col min-h-0 bg-[#0a0a0a] border border-slate-800 rounded-lg overflow-hidden">
-        <div id="chat-container" class="flex-1 overflow-y-auto p-3 space-y-4 text-xs">
-            <div class="text-cyan-800 italic border-b border-slate-900 pb-2">--- CONTEXT-AWARE SESSION ACTIVE ---</div>
+        <div id="chat-container" class="flex-1 overflow-y-auto p-3 space-y-4 text-[11px]">
+            <div class="text-cyan-800 italic border-b border-slate-900 pb-2">--- VISUAL ENGINE ENHANCED ---</div>
         </div>
+        
         <div id="status-bar" class="bg-black/50 border-t border-slate-800 px-3 py-1.5 text-[9px] text-amber-500 font-mono h-14 overflow-y-auto italic">
-            > Standby...
+            > Ready for strategic commands...
         </div>
+
         <div class="p-2 bg-slate-900/80 border-t border-slate-700">
             <div class="flex gap-2">
-                <input type="text" id="user-input" placeholder="Command..." class="flex-1 bg-black border-2 border-slate-700 rounded px-3 py-3 text-sm text-cyan-400 focus:border-cyan-500 outline-none">
-                <button onclick="send()" id="btn" class="bg-cyan-600 text-black font-black px-4 rounded active:scale-90">GO</button>
+                <input type="text" id="user-input" placeholder="Type command..." class="flex-1 bg-black border-2 border-slate-700 rounded px-3 py-3 text-sm text-cyan-400 focus:border-cyan-500 outline-none transition-colors">
+                <button onclick="send()" id="btn" class="bg-cyan-600 text-black font-black px-5 rounded active:scale-90 transition-transform">GO</button>
             </div>
         </div>
     </div>
+
     <script>
+        // Konfigurasi Marked agar aman
+        marked.setOptions({ gfm: true, breaks: true });
+
         async function send() {
             const input = document.getElementById('user-input');
             const chat = document.getElementById('chat-container');
@@ -167,8 +184,8 @@ def index():
             const prompt = input.value;
             input.value = ''; btn.disabled = true;
             
-            status.innerHTML = `<span class="animate-pulse text-cyan-400">> ANALYZING ENVIRONMENT & EXECUTING...</span>`;
-            chat.innerHTML += `<div class="text-right"><span class="bg-slate-800 px-3 py-1 rounded-lg inline-block max-w-[80%]">${prompt}</span></div>`;
+            status.innerHTML = `<span class="animate-pulse text-cyan-400">> RENDERING ARCHITECTURAL DATA...</span>`;
+            chat.innerHTML += `<div class="text-right"><span class="bg-slate-800 px-3 py-2 rounded-lg inline-block max-w-[85%] border border-slate-700">${prompt}</span></div>`;
 
             try {
                 const res = await fetch('/chat', {
@@ -177,13 +194,21 @@ def index():
                     body: JSON.stringify({prompt: prompt})
                 });
                 const data = await res.json();
-                chat.innerHTML += `<div class="bg-slate-900/40 border-l-2 border-cyan-600 p-3 rounded text-slate-300">${data.response}</div>`;
-                status.innerHTML = data.actions.map(a => `<div>> ${a}</div>`).join('') || "> Task Finished.";
+                
+                // PARSING MARKDOWN UNTUK TABEL
+                const htmlContent = marked.parse(data.response);
+                
+                chat.innerHTML += `
+                    <div class="bg-slate-900/40 border-l-2 border-cyan-600 p-3 rounded text-slate-300 markdown-content">
+                        ${htmlContent}
+                    </div>`;
+                
+                status.innerHTML = data.actions.map(a => `<div>> ${a}</div>`).join('') || "> Operation Successful.";
                 document.getElementById('model-tag').innerText = "SYSTEM: " + data.model;
                 chat.scrollTop = chat.scrollHeight;
                 status.scrollTop = status.scrollHeight;
             } catch (e) {
-                status.innerHTML = `<span class="text-red-500">> FAILED: Connection Error</span>`;
+                status.innerHTML = `<span class="text-red-500">> ERROR: Kernel Panic or Connection Lost</span>`;
             } finally { btn.disabled = false; }
         }
 
@@ -198,7 +223,6 @@ def index():
 </body>
 </html>
 """)
-
 @app.route('/chat', methods=['POST'])
 def chat():
     data = request.json
@@ -268,4 +292,3 @@ if __name__ == '__main__':
     print("Akses GUI di: http://localhost:5000")
     # Jalankan server
     app.run(host='0.0.0.0', port=5000, debug=False)
-  
