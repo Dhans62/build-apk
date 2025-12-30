@@ -1,1 +1,21 @@
-nohup python ds_gui.py > ds_ai.log 2>&1 &
+{
+  "name": "DS-AI Architect Node",
+  "image": "mcr.microsoft.com/devcontainers/python:3.11",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "formulahendry.auto-rename-tag"
+      ]
+    }
+  },
+  "postCreateCommand": "pip install flask requests flask-cors && chmod +x start_ds.sh",
+  "waitFor": "postCreateCommand",
+  "portsAttributes": {
+    "5000": {
+      "label": "DS-AI GUI",
+      "onAutoForward": "openBrowser"
+    }
+  },
+  "postStartCommand": "./start_ds.sh"
+}
