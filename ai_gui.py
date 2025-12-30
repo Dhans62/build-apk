@@ -113,58 +113,71 @@ def index():
 <head>
     <title>DS-AI v4.1 ARCHITECT</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <style>
-        body { background: #050505; color: #cbd5e1; font-family: 'Fira Code', monospace; }
-        ::-webkit-scrollbar { width: 4px; }
-        ::-webkit-scrollbar-thumb { background: #1e293b; }
+        body { 
+            background: #050505; 
+            color: #cbd5e1; 
+            font-family: monospace;
+            height: 100dvh; /* Dynamic Viewport Height untuk Mobile */
+            display: flex;
+            flex-direction: column;
+        }
+        ::-webkit-scrollbar { width: 3px; }
+        ::-webkit-scrollbar-thumb { background: #334155; }
+        .terminal-text { text-shadow: 0 0 5px rgba(6, 182, 212, 0.5); }
+        #chat-container { scroll-behavior: smooth; }
     </style>
 </head>
-<body class="h-screen flex flex-col p-2 overflow-hidden">
-    <div class="border-b border-slate-800 pb-2 mb-2 flex justify-between items-center px-2">
-        <div>
-            <span class="text-cyan-500 font-bold text-lg tracking-tighter">DS-AI v4.1</span>
-            <span id="model-tag" class="ml-2 text-[10px] bg-slate-800 px-2 py-0.5 rounded text-yellow-500 uppercase">System Ready</span>
+<body class="p-2 overflow-hidden">
+    <div class="border-b border-cyan-900/50 pb-2 mb-2 flex justify-between items-center bg-[#050505]">
+        <div class="flex flex-col">
+            <span class="text-cyan-500 font-bold text-sm tracking-tighter terminal-text">DS-AI v4.1 ARCHITECT</span>
+            <div id="model-tag" class="text-[8px] text-slate-500 uppercase">SYSTEM: IDLE</div>
         </div>
-        <button onclick="finalPush()" class="bg-green-600 hover:bg-green-500 text-black px-4 py-1 rounded-md text-[10px] font-black transition-all">PUSH TO GITHUB</button>
+        <button onclick="finalPush()" class="bg-green-600 hover:bg-green-500 text-white text-[10px] px-3 py-1.5 rounded font-bold transition-all active:scale-95">
+            PUSH TO GITHUB
+        </button>
     </div>
 
-    <div class="flex flex-1 gap-2 overflow-hidden">
-        <div class="flex-1 flex flex-col bg-[#0a0a0a] border border-slate-800 rounded-xl p-3 overflow-hidden">
-            <div id="chat-container" class="flex-1 overflow-y-auto space-y-4 text-sm p-1"></div>
-            
-            <div id="status-bar" class="mt-2 py-1 px-2 text-[9px] border-t border-slate-800 flex flex-wrap gap-2 text-cyan-400 italic"></div>
-
-            <div class="mt-2 flex gap-2 bg-slate-900/50 p-2 rounded-lg border border-slate-700">
-                <input type="text" id="user-input" class="flex-1 bg-transparent border-none outline-none text-sm text-white" placeholder="Perintah @file...">
-                <button onclick="send()" id="btn" class="bg-cyan-600 px-4 py-1 rounded font-bold text-black text-xs active:scale-95 transition-transform">RUN</button>
-            </div>
+    <div class="flex-1 flex flex-col min-h-0 bg-[#0a0a0a] border border-slate-800 rounded-lg overflow-hidden">
+        <div id="chat-container" class="flex-1 overflow-y-auto p-3 space-y-4 text-xs">
+            <div class="text-cyan-800 italic border-b border-slate-900 pb-2">--- SESSION STARTED IN TERMUX ---</div>
         </div>
 
-        <div id="preview-panel" class="hidden md:flex flex-1 flex-col bg-[#0a0a0a] border border-slate-800 rounded-xl p-3 overflow-hidden">
-            <div class="flex justify-between items-center mb-2">
-                <span id="file-title" class="text-[10px] text-yellow-500 font-bold truncate">PREVIEW: NO FILE</span>
+        <div id="status-bar" class="bg-black/50 border-t border-slate-800 px-3 py-1.5 text-[9px] text-amber-500 font-mono h-12 overflow-y-auto">
+            <span>READY: Menunggu perintah strategis...</span>
+        </div>
+
+        <div class="p-2 bg-slate-900/80 border-t border-slate-700">
+            <div class="flex gap-2">
+                <input type="text" id="user-input" 
+                    placeholder="Ketik perintah (ex: buat file test.dart)..." 
+                    class="flex-1 bg-black border-2 border-slate-700 rounded px-3 py-3 text-sm text-cyan-400 focus:outline-none focus:border-cyan-500 placeholder-slate-600">
+                <button onclick="send()" id="btn" 
+                    class="bg-cyan-600 hover:bg-cyan-500 text-black font-black px-4 rounded transition-all active:scale-90">
+                    GO
+                </button>
             </div>
-            <pre id="code-view" class="flex-1 overflow-auto bg-black/50 p-3 rounded border border-slate-800 text-[11px] text-green-400"></pre>
         </div>
     </div>
 
     <script>
+        // Masukkan kembali fungsi JavaScript kamu yang tadi di sini
         async function send() {
             const input = document.getElementById('user-input');
             const chat = document.getElementById('chat-container');
             const btn = document.getElementById('btn');
             const statusBar = document.getElementById('status-bar');
-            const codeView = document.getElementById('code-view');
-            const fileTitle = document.getElementById('file-title');
-            const preview = document.getElementById('preview-panel');
 
             if(!input.value) return;
             const prompt = input.value;
-            input.value = ''; btn.disabled = true;
-            statusBar.innerHTML = "<span>DS-AI sedang berpikir...</span>";
-
-            chat.innerHTML += `<div class="text-right"><span class="bg-slate-800 px-3 py-1.5 rounded-lg text-xs inline-block text-slate-400 font-bold italic">@ ${prompt}</span></div>`;
+            input.value = ''; 
+            btn.disabled = true;
+            btn.classList.add('opacity-50');
+            
+            statusBar.innerHTML = `<span class="animate-pulse text-cyan-400">> ANALYZING: ${prompt}</span>`;
+            chat.innerHTML += `<div class="text-right"><span class="bg-slate-800 px-3 py-1.5 rounded-lg inline-block max-w-[80%]">${prompt}</span></div>`;
 
             try {
                 const res = await fetch('/chat', {
@@ -174,36 +187,32 @@ def index():
                 });
                 const data = await res.json();
 
-                chat.innerHTML += `<div class="bg-slate-900/40 p-3 rounded-lg border border-slate-800 text-sm leading-relaxed">${data.response}</div>`;
+                chat.innerHTML += `<div class="bg-slate-900/40 border-l-2 border-cyan-600 p-3 rounded text-slate-300 leading-relaxed">${data.response}</div>`;
                 
-                // Update Preview
-                if(data.last_content) {
-                    preview.classList.remove('hidden');
-                    fileTitle.innerText = "PREVIEW: " + data.last_file;
-                    codeView.innerText = data.last_content;
-                }
-
-                statusBar.innerHTML = data.actions.map(a => `<span>${a}</span>`).join("");
-                document.getElementById('model-tag').innerText = data.model;
+                // Terminal Log update
+                statusBar.innerHTML = data.actions.map(a => `<div class="text-green-500">> EXECUTE: ${a}</div>`).join('') || "<span>> DONE: Task completed.</span>";
+                document.getElementById('model-tag').innerText = "SYSTEM: " + data.model;
                 chat.scrollTop = chat.scrollHeight;
+                statusBar.scrollTop = statusBar.scrollHeight;
             } catch (e) {
-                statusBar.innerHTML = `<span class="text-red-500">Error: ${e}</span>`;
+                statusBar.innerHTML = `<span class="text-red-500">> ERROR: Connection failed. Check Termux!</span>`;
             } finally {
                 btn.disabled = false;
+                btn.classList.remove('opacity-50');
             }
         }
 
         async function finalPush() {
-            if(!confirm("Push kode ke GitHub sekarang? Ini akan mentrigger GitHub Actions.")) return;
-            const btn = event.target;
-            btn.innerText = "PUSHING..."; btn.disabled = true;
-            
+            if(!confirm("Push kode ke GitHub?")) return;
             const res = await fetch('/commit', {method: 'POST'});
             const data = await res.json();
-            
             alert(data.log);
-            btn.innerText = "PUSH TO GITHUB"; btn.disabled = false;
         }
+
+        // Support Enter Key
+        document.getElementById('user-input').addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') send();
+        });
     </script>
 </body>
 </html>
